@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: purchase-prediction-api
+  labels:
+    app: purchase-prediction-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: purchase-prediction-api
+  template:
+    metadata:
+      labels:
+        app: purchase-prediction-api
+    spec:
+      containers:
+      - name: api
+        image: <YOUR_IMAGE_URI>
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            memory: "1024Mi"
+            cpu: "500m"
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: purchase-prediction-api-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: purchase-prediction-api
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: purchase-prediction-eda
+  labels:
+    app: purchase-prediction-eda
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: purchase-prediction-eda
+  template:
+    metadata:
+      labels:
+        app: purchase-prediction-eda
+    spec:
+      containers:
+      - name: dashboard
+        image: <YOUR_IMAGE_URI>
+        ports:
+        - containerPort: 8050
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: openai-secret
+              key: api-key
+        resources:
+          limits:
+            memory: "2048Mi"
+            cpu: "1000m"
+          requests:
+            memory: "1024Mi"
+            cpu: "500m"
+        command: ["python", "eda.py"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: purchase-prediction-eda-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: purchase-prediction-eda
+  ports:
+  - protocol: TCP
+    port: 8050
+    targetPort: 8050

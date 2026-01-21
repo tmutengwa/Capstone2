@@ -1,0 +1,29 @@
+
+services:
+  api:
+    build: .
+    image: black_friday_sales:latest
+    container_name: black_friday_sales_api
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs:/app/logs
+    environment:
+      - PORT=8080
+    command: uvicorn serve:app --host 0.0.0.0 --port 8080
+
+  dashboard:
+    image: black_friday_sales:latest
+    container_name: black_friday_sales_eda
+    depends_on:
+      - api
+    ports:
+      - "8050:8050"
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    command: python eda.py
