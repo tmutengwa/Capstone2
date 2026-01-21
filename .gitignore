@@ -56,3 +56,16 @@ Thumbs.db
 
 # Project Specific
 .python-version
+
+# Deployment & Test Scripts
+trust-policy.json
+test_visual_analysis.py
+test_upload.py
+test_llm_eval.py
+start.py
+evaluate.py
+deploy.sh
+automated_reporting.py
+push_images.sh
+create_repo.sh
+create_lambdas.sh
