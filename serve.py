@@ -36,14 +36,26 @@ from feature_engineering import preprocess_single_record
 # Suppress specific sklearn warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn.utils.validation")
 
-# Configure logging
-if not os.path.exists('logs'):
-    os.makedirs('logs')
-if not os.path.exists('jobs'):
-    os.makedirs('jobs')
+# Detect if running in AWS Lambda
+# AWS_LAMBDA_FUNCTION_NAME is a standard variable set by the Lambda runtime
+IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
+
+# Set the jobs directory accordingly
+if IS_LAMBDA:
+    # Use the writable /tmp directory in Lambda
+    JOBS_DIR = "/tmp/jobs"
+    LOGS_DIR = "/tmp/logs"
+else:
+    # Use the local directory for your MacBook/Docker
+    JOBS_DIR = "jobs"
+    LOGS_DIR = "logs"
+
+# Create the directories safely
+os.makedirs(JOBS_DIR, exist_ok=True)
+os.makedirs(LOGS_DIR, exist_ok=True)
 
 logging.basicConfig(
-    filename='logs/serve.log',
+    filename=f'{LOGS_DIR}/serve.log',
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     filemode='a'
@@ -147,7 +159,7 @@ def process_file_background(job_id: str, file_content: bytes, filename: str):
         result_df['Purchase_Prediction'] = np.round(predictions, 2)
         
         # Save result
-        result_filename = f"jobs/{job_id}_result.csv"
+        result_filename = f"{JOBS_DIR}/{job_id}_result.csv"
         result_df.to_csv(result_filename, index=False)
         
         jobs[job_id]['status'] = 'completed'
