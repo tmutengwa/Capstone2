@@ -11,7 +11,7 @@ services:
       - PORT=8080
     # Override the default entrypoint to ensure we run the specific file 'serve:app'
     # 'uv run' ensures it executes within the managed environment
-    entrypoint: ["uv", "run", "uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["uv", "run", "uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8080"]
 
   dashboard:
     image: black_friday_sales:latest
@@ -28,4 +28,4 @@ services:
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     # Override entrypoint to run the Python script instead of the API
-    entrypoint: ["uv", "run", "python", "eda.py"]
+    command: ["uv", "run", "python", "eda.py"]
