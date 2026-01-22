@@ -1,46 +1,38 @@
-import logging
 import os
+import logging
 import sys
-from logging.handlers import RotatingFileHandler
 
-def setup_logging(level=None):
-    """
-    Setup centralized logging configuration.
-    """
-    if level is None:
-        level = os.getenv("LOG_LEVEL", "INFO").upper()
-
-    # Create logs directory if it doesn't exist
-    if not os.path.exists('logs'):
-        os.makedirs('logs')
-
-    logger = logging.getLogger("AutoEDA")
-    logger.setLevel(level)
+def setup_logging():
+    # Use lowercase name as requested in the new implementation
+    logger = logging.getLogger("autoeda")
+    logger.setLevel(logging.INFO)
     
-    # Clear existing handlers
-    logger.handlers = []
+    # Clear existing handlers to prevent duplicates
+    if logger.hasHandlers():
+        logger.handlers.clear()
 
-    # File Handler with rotation
-    file_handler = RotatingFileHandler(
-        'logs/autoeda.log', 
-        maxBytes=10*1024*1024, # 10MB
-        backupCount=5
-    )
-    file_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
+    # Detect if running in AWS Lambda
+    IS_LAMBDA = os.environ.get("AWS_LAMBDA_FUNCTION_NAME") is not None
 
-    # Console Handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_formatter = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(message)s'
-    )
-    console_handler.setFormatter(console_formatter)
-    logger.addHandler(console_handler)
+    if IS_LAMBDA:
+        # 1. DISABLE FILE LOGGING: Do not use RotatingFileHandler here
+        # 2. REDIRECT TO STDOUT: Lambda captures anything sent to the console
+        handler = logging.StreamHandler(sys.stdout)
+        formatter = logging.Formatter('%(levelname)s | %(name)s | %(message)s')
+    else:
+        # Standard local file logging
+        from logging.handlers import RotatingFileHandler
+        os.makedirs("logs", exist_ok=True)
+        handler = RotatingFileHandler(
+            "logs/autoeda.log", 
+            maxBytes=10*1024*1024, 
+            backupCount=5
+        )
+        formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
 
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     return logger
 
-# Create a default logger instance
+# Create a default logger instance for imports
 logger = setup_logging()
