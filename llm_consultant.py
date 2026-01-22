@@ -1,195 +1,173 @@
-import openai
-import base64
+from google import genai
+from google.genai import types
+import PIL.Image
+import os
+import logging
 from config import settings
 from logger import logger
 
+class PromptFactory:
+    """
+    Dynamic System Instruction Factory.
+    Anchors Gemini 2.5 Flash-Lite in mathematical 'Ground Truths' from the Lattice discovery.
+    """
+    @staticmethod
+    def create_grounded_instruction(eda_metadata):
+        instruction = (
+            "You are the Godobori Senior Data Architect. You MUST build your analysis from the bottom-up using these truths:\n"
+            f"1. LATTICE ROOT: {eda_metadata.get('Lattice_Root', 'N/A')}. This is the primary anchor of the dataset.\n"
+            f"2. PRICE SIGNATURE: {eda_metadata.get('Price_Signature', 'N/A')}. Missingness in Category 3 indicates a pricing floor.\n"
+            f"3. BIAS SIMULATION: {eda_metadata.get('Simulation_Bias', 'N/A')}.\n"
+            "4. NO GENERALIZATION: Use only provided stats and images. Do not use generic internet knowledge.\n"
+            "5. SEQUENTIAL ANALYSIS: Analyze all 7 evidence plots in strict numerical order (1-7).\n"
+            "6. FORMATTING: Heading (Bold 14), Subheading (Bold 13), Body (Regular 12)."
+        )
+        return instruction
+
+    @staticmethod
+    def get_report_instruction(eda_metadata):
+        return (
+            "You are the Godobori Senior Data Architect. Perform a 'Technical Analysis & Strategic Discovery'.\n"
+            f"Lattice Root: {eda_metadata.get('Lattice_Root', 'N/A')}.\n"
+            "Analyze the provided visual evidence sequentially."
+        )
+
+    @staticmethod
+    def get_health_instruction(eda_metadata):
+        return (
+            "You are a Senior Data Reliability Engineer. Perform a 'Data Health Assessment'.\n"
+            f"Grounded Fact: Price Signature is {eda_metadata.get('Price_Signature', 'N/A')}.\n"
+            "Focus on explaining why this signature requires 'Labelling' vs 'Dropping' for budget segment preservation."
+        )
+
+    @staticmethod
+    def get_summary_instruction(eda_metadata):
+        return (
+            "You are the Godobori Executive Consultant. Provide a high-level summary of the dataset.\n"
+            f"Lattice Root: {eda_metadata.get('Lattice_Root', 'N/A')}.\n"
+            f"Price Signature: {eda_metadata.get('Price_Signature', 'N/A')}."
+        )
+
+    @staticmethod
+    def get_chat_instruction(eda_metadata):
+        return (
+            "You are the Godobori AI Consultant. Ground every answer in these structural truths:\n"
+            f"{eda_metadata}\n"
+            "Cite the Lattice Check or Price Signature as mathematical proof for structural claims."
+        )
+
 class LLMConsultant:
-    def __init__(self):
-        self.api_key = settings.OPENAI_API_KEY
+    def __init__(self, cache_file="insights_cache.txt"):
+        self.api_key = settings.GOOGLE_API_KEY
         self.model_name = settings.LLM_MODEL
-        self.temperature = settings.LLM_TEMPERATURE
         self.enabled = settings.ENABLE_LLM
+        self.cache_file = cache_file
+        self.temperature = settings.LLM_TEMPERATURE
+        self.client = None
         
-        logger.info(f"AI Consultant Init: Enabled={self.enabled}, OPENAI_API_KEY_Set={self.api_key is not None}")
+        logger.info(f"Gemini Consultant Init: Enabled={self.enabled}")
         
         if self.enabled and self.api_key:
             try:
-                self.client = openai.OpenAI(api_key=self.api_key)
-                logger.info(f"OpenAI Client configured successfully with model '{self.model_name}'.")
+                self.client = genai.Client(api_key=self.api_key)
+                logger.info(f"Gemini Client configured successfully with model '{self.model_name}'.")
             except Exception as e:
-                logger.error(f"Failed to configure OpenAI Client: {e}")
+                logger.error(f"Failed to configure Gemini Client: {e}")
                 self.enabled = False
 
     def is_available(self):
-        return self.enabled and self.api_key is not None
+        return self.enabled and self.client is not None
 
-    def _query_llm(self, system_prompt, user_prompt):
-        if not self.is_available():
-            return "AI Consultant is not available. Please configure OPENAI_API_KEY in .env file."
-            
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=self.temperature
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            logger.error(f"OpenAI Query failed: {e}")
-            return f"Error communicating with AI: {e}"
+    def get_persisted_insights(self):
+        if os.path.exists(self.cache_file):
+            with open(self.cache_file, "r") as f:
+                return f.read()
+        return None
 
-    def analyze_plot_image(self, plot_name: str, image_bytes: bytes):
-        """
-        Multimodal analysis using OpenAI Vision.
-        """
+    def generate_grounded_report(self, plot_paths: dict, eda_metadata: dict):
+        """Sequential Multimodal Analysis anchored by the PromptFactory."""
         if not self.is_available():
             return "AI Consultant is not available."
 
+        system_instruction = PromptFactory.get_report_instruction(eda_metadata)
+
         try:
-            # Encode bytes to base64 string
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            prompt_parts = ["## **Technical Analysis & Strategic Discovery**\nPerform sequential analysis:"]
             
-            prompt = (
-                f"You are a Principal Data Visualization Architect. Analyze this '{plot_name}' plot from the Black Friday dataset. "
-                "Produce a beautifully formatted Markdown report.\n\n"
-                "### 🎨 Visual Momentum Analysis\n"
-                "- **Shape & Distribution**: Explain what the skewness/clusters tell us about 'Whale' vs 'Average' shoppers.\n"
-                "- **Patterns & Anomalies**: Identify striping, outliers, or categorical bottlenecks.\n"
-                "- **Strategic Insight**: Shift your analysis to be **business-strategic**.\n\n"
-                "> *Key Takeaway*: Summarize the most important finding in one sentence."
-            )
+            for key in sorted(plot_paths.keys()):
+                path = plot_paths[key]
+                if os.path.exists(path):
+                    img = PIL.Image.open(path)
+                    prompt_parts.append(f"\n### Analysis of Evidence Plot: {key}")
+                    prompt_parts.append(img)
 
-            response = self.client.chat.completions.create(
+            response = self.client.models.generate_content(
                 model=self.model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=500
+                contents=prompt_parts,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=self.temperature
+                )
             )
-            return response.choices[0].message.content
+            report = response.text
+            
+            with open(self.cache_file, "w") as f:
+                f.write(report)
+            return report
+
         except Exception as e:
-            logger.error(f"OpenAI Vision Query failed for {plot_name}: {e}")
-            return f"Error analyzing plot: {e}"
+            logger.error(f"Gemini Generation failed: {e}")
+            return f"Error communicating with Gemini: {e}"
 
-    def generate_summary_insight(self, data_summary: str):
-        """
-        Generate an executive summary based on dataset statistics.
-        """
-        system_prompt = (
-            "You are a Senior Data Scientist. Provide a concise, business-oriented executive summary "
-            "of the dataset based on the provided statistics. Highlight key data quality issues "
-            "and potential analytical directions."
-        )
-        return self._query_llm(system_prompt, data_summary)
+    def analyze_diagnostics(self, context: str, eda_metadata: dict):
+        """Grounded Data Health Assessment."""
+        system_prompt = PromptFactory.get_health_instruction(eda_metadata)
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=context,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=self.temperature
+                )
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"Gemini Diagnostics failed: {e}")
+            return f"Error: {e}"
 
-    def analyze_diagnostics(self, context: str):
-        """
-        Explain diagnostic test results and skewness/kurtosis with detailed interpretation.
-        """
-        system_prompt = (
-            """You are a Senior Data Reliability Engineer. Perform a 'Data Health Assessment'.
-Analyze the provided stats and metrics to generate a concise report.
+    def generate_summary_insight(self, context: str, eda_metadata: dict):
+        """Generates a high-level summary insight."""
+        system_prompt = PromptFactory.get_summary_instruction(eda_metadata)
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=context,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=self.temperature
+                )
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"Gemini Summary failed: {e}")
+            return f"Error: {e}"
 
-**STRICT RULES**:
-- **NO TITLES OR INTROS**: Start directly with the first section header.
-- **NO TABLES**: Use bullet points or short paragraphs only.
-- **BE CONCISE**: Limit to key risks and actions.
-
-Include these sections:
-### 🟢 Statistical Health Check
-Analyze sparsity, Skewness/Kurtosis, and Normality. State if transformation is required.
-
-### 🔵 Relationship & Cardinality
-Identify dependency risks and high-cardinality IDs.
-
-### 🔴 Business Action Plan
-Provide specific 'Possible Actions' and 2-3 high-impact interaction features.
-
-### 🚀 Model Strategy
-Briefly suggest the best model type and why."""
-        )
-        return self._query_llm(system_prompt, context)
-
-    def analyze_visuals(self, correlation_matrix: str):
-        """
-        Generate detailed insights based on the correlation matrix (Heatmap).
-        """
-        system_prompt = (
-            """You are a Senior Data Scientist analyzing a Correlation Heatmap. 
-Generate a comprehensive visual analysis report.
-
-**STRICT RULES**:
-- **NO TITLES OR INTROS**: Start directly with the first insight header.
-- **NO FLUFF**: Go straight to the interpretation.
-
-Follow this structure:
-
-#### 1. Dominance of [Strongest Feature]
-   - **Interpretation**: Explain relationship.
-   - **Business Impact**: How this influences strategy.
-
-#### 2. Demographic Insights (Weak Correlations)
-   - **Interpretation**: Explain non-linearity.
-   - **The Nuance**: Value for complex models.
-
-#### 3. Secondary Influencers
-   - **Interpretation**: Describe trends.
-   - **Business Impact**: Why capture these.
-
-#### 4. Independence of Predictors
-   - **Interpretation**: Explain independence (good for ML).
-
----
-#### Summary Recommendation
-   - Concluding strategy (e.g., Feature Engineering)."""
-        )
-        return self._query_llm(system_prompt, f"Correlation Matrix:\n{correlation_matrix}")
-
-    def interpret_test_result(self, test_result: dict, col1: str, col2: str):
-        """
-        Explain a statistical test result in plain English.
-        """
-        system_prompt = (
-            "You are a helpful statistical consultant. Explain the results of this statistical test "
-            "to a non-technical business stakeholder. Focus on whether there is a significant relationship "
-            "and the strength of that relationship. Avoid jargon where possible."
-        )
-        user_prompt = f"Variables: '{col1}' and '{col2}'.\nTest Results: {test_result}"
-        return self._query_llm(system_prompt, user_prompt)
-
-    def suggest_feature_engineering(self, columns_info: str):
-        """
-        Suggest feature engineering steps.
-        """
-        system_prompt = (
-            "You are a Feature Engineering expert. Suggest 3-5 high-impact feature transformations "
-            "for this dataset. Explain WHY each transformation would help a machine learning model."
-        )
-        return self._query_llm(system_prompt, columns_info)
-
-    def answer_question(self, context: str, question: str):
-        """
-        Answer a user's specific question about the data.
-        """
-        system_prompt = (
-            "You are an expert Data Analyst. Answer the user's question directly using the provided statistical context (Correlations, Group Averages, Data Sample). "
-            "Do not be vague or generic. Do not say 'as an AI I cannot...'. "
-            "Instead, interpret the provided numbers to give a concrete answer. "
-            "If the data shows a trend (e.g., Age Group X spends more), state it clearly."
-        )
-        user_prompt = f"Context:\n{context}\n\nQuestion: {question}"
-        return self._query_llm(system_prompt, user_prompt)
+    def answer_question(self, context: str, question: str, eda_metadata: dict):
+        """Grounded Q&A via Godobori chat agent."""
+        system_instruction = PromptFactory.get_chat_instruction(eda_metadata)
+        user_prompt = f"Statistical Context:\n{context}\n\nUser Question: {question}"
+        
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=self.temperature
+                )
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"Gemini Q&A failed: {e}")
+            return f"Error: {e}"

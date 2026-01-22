@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     # LLM Settings
     ENABLE_LLM: bool = True
     OPENAI_API_KEY: Optional[str] = None
-    LLM_MODEL: str = "gpt-4o"
+    GOOGLE_API_KEY: Optional[str] = None
+    LLM_MODEL: str = "gemini-1.5-pro"
     LLM_TEMPERATURE: float = 0.1
 
     # Cloud Settings (Optional)

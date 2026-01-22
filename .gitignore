@@ -28,7 +28,6 @@ wheels/
 *.egg
 
 # Data & Models (Generated)
-data/
 models/*.pkl
 models/*.b
 models/*.csv
@@ -67,5 +66,3 @@ evaluate.py
 deploy.sh
 automated_reporting.py
 push_images.sh
-create_repo.sh
-create_lambdas.sh

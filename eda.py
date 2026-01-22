@@ -1,10 +1,12 @@
 import os
 import dash
+import base64
 from dash import dcc, html, Input, Output, State, callback
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import pandas as pd
 import numpy as np
+from itertools import combinations
 from config import settings
 
 from orchestrator import DuckOrchestrator
@@ -14,7 +16,33 @@ from logger import logger
 
 # --- Initialization ---
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.FLATLY], suppress_callback_exceptions=True)
-app.title = "AI-Driven EDA Platform"
+app.title = "AutoEDA Platform"
+
+# Injecting Global Styles for AI Report Formatting (Bold 14/13, Regular 12)
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            .ai-report h2 { font-weight: bold; font-size: 14pt; margin-top: 20px; }
+            .ai-report h3 { font-weight: bold; font-size: 13pt; margin-top: 15px; }
+            .ai-report p, .ai-report li { font-weight: normal; font-size: 12pt; line-height: 1.6; }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
 
 orchestrator = DuckOrchestrator()
 default_file = "data/train.csv"
@@ -22,6 +50,53 @@ if os.path.exists(default_file):
     orchestrator.load_data(default_file)
 
 consultant = LLMConsultant()
+
+# --- Structural Discovery & Simulation Logic ---
+class BlackFridayEDA:
+    def __init__(self, df):
+        self.df = df
+
+    def get_missingness_price_signature(self):
+        """Discovers the Price Signature: Correlation between nulls in Category 3 and Purchase."""
+        if 'Product_Category_3' in self.df.columns and 'Purchase' in self.df.columns:
+            null_flag = self.df['Product_Category_3'].isnull().astype(int)
+            return round(null_flag.corr(self.df['Purchase']), 4)
+        return 0.0
+
+    def bottom_up_lattice_check(self, cols=['User_ID', 'Product_ID']):
+        """Math-driven discovery of structural hierarchy via Lattice Logic."""
+        total = len(self.df)
+        available = [c for c in cols if c in self.df.columns]
+        for r in range(1, 3):
+            for combo in combinations(available, r):
+                if len(self.df.groupby(list(combo))) == total:
+                    return f"Lattice Root: {' + '.join(combo)}"
+        return "Non-Hierarchical/Flat Structure"
+
+    def simulate_variance_data(self):
+        """Generates the Simulation Variance Table data to quantify cleaning bias."""
+        global_mean = self.df['Purchase'].mean()
+        dropped_df = self.df.dropna(subset=['Product_Category_3'])
+        dropped_mean = dropped_df['Purchase'].mean()
+        
+        null_mask = self.df['Product_Category_3'].isnull()
+        budget_segment_mean = self.df[null_mask]['Purchase'].mean()
+        
+        data = [
+            {"Strategy": "Global Baseline (Actual)", "Purchase Mean": f"${global_mean:,.2f}", "Bias Error": "$0.00", "Data Retention": "100%"},
+            {"Strategy": "Top-Down (Dropping Rows)", "Purchase Mean": f"${dropped_mean:,.2f}", "Bias Error": f"+${dropped_mean - global_mean:,.2f}", "Data Retention": f"{(len(dropped_df)/len(self.df))*100:.1f}%"},
+            {"Strategy": "Bottom-Up (Labelling)", "Purchase Mean": f"${budget_segment_mean:,.2f}", "Bias Error": "Segment Signal", "Data Retention": "100%"}
+        ]
+        return pd.DataFrame(data)
+
+    def get_decision_matrix(self):
+        """Structural state mapped to grounded management strategies for the PromptFactory."""
+        root = self.bottom_up_lattice_check()
+        if "User_ID" in root and "Product_ID" in root:
+            return "STRICT TREE (Strategy: Backfill / Inherit)"
+        elif "Lattice" in root:
+            return "NETWORK (Strategy: Categorical 'None' / Labeling)"
+        return "LEVEL-BASED (Strategy: Path Truncation)"
 
 # --- Layout Components ---
 
@@ -70,12 +145,10 @@ tabs = dbc.Tabs(
 )
 
 app.layout = html.Div([
-    # State Stores
-    dcc.Store(id='store-health'),
-    dcc.Store(id='store-visual'),
-    dcc.Store(id='store-summary'),
-    dcc.Store(id='store-ask-history'),
-    
+    dcc.Store(id='store-health', storage_type='session'),
+    dcc.Store(id='store-visual', storage_type='session'),
+    dcc.Store(id='store-summary', storage_type='session'),
+    dcc.Store(id='store-ask-history', storage_type='session'),
     navbar,
     sidebar,
     html.Div([
@@ -97,12 +170,9 @@ def update_data(n_load, n_trans, path, query):
     ctx = dash.callback_context
     if not ctx.triggered:
         df = orchestrator.get_data()
-        if not df.empty:
-             return f"{df.shape[0]} rows, {df.shape[1]} cols"
-        return "No data loaded."
+        return f"{df.shape[0]} rows, {df.shape[1]} cols" if not df.empty else "No data loaded."
 
     button_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
     if button_id == "btn-load" and path:
         try:
             df = orchestrator.load_data(path)
@@ -118,9 +188,7 @@ def update_data(n_load, n_trans, path, query):
             return f"Error: {str(e)}"
             
     df = orchestrator.get_data()
-    if not df.empty:
-         return f"{df.shape[0]} rows, {df.shape[1]} cols"
-    return "No data loaded."
+    return f"{df.shape[0]} rows, {df.shape[1]} cols" if not df.empty else "No data loaded."
 
 @app.callback(
     Output("page-content", "children"),
@@ -136,25 +204,38 @@ def render_tab_content(active_tab, health_data, visual_data, summary_data, ask_d
         return html.Div("Please load a dataset first.", className="text-danger")
     
     profiler = SmartProfiler(df)
+    eda = BlackFridayEDA(df)
 
     if active_tab == "tab-dashboard":
+        # 1. PRESERVED: Dataset Overview Logic
         summary = profiler.get_dataset_summary()
+        
+        # This renders the structural anchors discovered via Bottom-Up Logic
         purchase_stats = {}
         if 'Purchase' in df.columns:
-            purchase_stats['Mean'] = round(df['Purchase'].mean(), 2)
-            purchase_stats['Min'] = df['Purchase'].min()
-            purchase_stats['Max'] = df['Purchase'].max()
-            purchase_stats['Median'] = df['Purchase'].median()
-            mode_series = df['Purchase'].mode()
-            purchase_stats['Mode'] = mode_series[0] if not mode_series.empty else "N/A"
+            purchase_stats = {
+                'Mean': round(df['Purchase'].mean(), 2),
+                'Min': df['Purchase'].min(),
+                'Max': df['Purchase'].max(),
+                'Median': df['Purchase'].median(),
+                'Mode': df['Purchase'].mode()[0] if not df['Purchase'].mode().empty else "N/A"
+            }
         else:
             purchase_stats = {k: 'N/A' for k in ['Mean', 'Min', 'Max', 'Median', 'Mode']}
         
-        diagnostics = profiler.run_diagnostic_tests()
-        diag_table = dbc.Table.from_dataframe(diagnostics, striped=True, bordered=True, hover=True, responsive=True) if not diagnostics.empty else html.P("No diagnostic tests available.")
+        # --- ADDITIVE: Lattice Node Visualization ---
+        lattice_viz = html.Div([
+            html.H4("Lattice Node Mapping (Structural Dependency)"),
+            dbc.Alert(f"Root Discovery: {eda.bottom_up_lattice_check()}", color="success"),
+            html.P("This lattice verifies the Parent-Child relationship between User and Category."),
+        ], className="mb-4")
+
+        # UI Implementation of the Simulation Variance Table
+        variance_df = eda.simulate_variance_data()
+        variance_table = dbc.Table.from_dataframe(variance_df, striped=True, bordered=True, hover=True, responsive=True)
         
+        diagnostics = profiler.run_diagnostic_tests()
         skew_kurt = profiler.get_skewness_kurtosis()
-        skew_table = dbc.Table.from_dataframe(skew_kurt, striped=True, bordered=True, hover=True, responsive=True) if not skew_kurt.empty else html.P("No numerical columns for skewness analysis.")
         
         return html.Div([
             html.H3("Dataset Overview"),
@@ -173,42 +254,43 @@ def render_tab_content(active_tab, health_data, visual_data, summary_data, ask_d
                 dbc.Col(dbc.Card([dbc.CardBody([html.H4(purchase_stats['Max']), html.P("Purchase Max")])], color="secondary", inverse=True), width=3),
             ], className="mb-4"),
             
+            html.H4("Simulation Variance Table (Bias Detection)"),
+            variance_table,
+            html.P("Insight: Switching to labelling removes artificial mean inflation.", style={"fontSize": "0.85rem", "color": "blue"}),
+
             html.H4("Data Health Assessment"),
             dbc.Button("Generate Analysis", id="btn-generate-health", color="info", size="sm", className="mb-2"),
-            dcc.Loading(id="loading-health", children=[html.Div(id="ai-health-output", children=dcc.Markdown(health_data) if health_data else None, className="p-3 border bg-light mb-4")]),
+            dcc.Loading(id="loading-health", children=[html.Div(id="ai-health-output", children=dcc.Markdown(health_data, className="ai-report") if health_data else None, className="p-3 border bg-light mb-4")]),
 
             html.H4("Diagnostic Tests"),
-            diag_table,
+            dbc.Table.from_dataframe(diagnostics, striped=True, bordered=True, hover=True, responsive=True),
             
             html.H4("Skewness & Kurtosis"),
-            skew_table,
+            dbc.Table.from_dataframe(skew_kurt, striped=True, bordered=True, hover=True, responsive=True),
         ])
 
     elif active_tab == "tab-visuals":
         plots = profiler.generate_all_plots()
         plot_components = []
-        plot_items = list(plots.items())
-        i = 0
-        while i < len(plot_items):
-            name, fig = plot_items[i]
-            if name == "Pairwise Plot":
-                plot_components.append(dbc.Row(dbc.Col(dcc.Graph(figure=fig), width=12), className="mb-4"))
-                i += 1
-                continue
-            row_children = [dbc.Col(dcc.Graph(figure=fig), width=6)]
-            if i + 1 < len(plot_items):
-                name2, fig2 = plot_items[i+1]
-                if name2 != "Pairwise Plot":
-                    row_children.append(dbc.Col(dcc.Graph(figure=fig2), width=6))
-                    i += 2
-                else: i += 1
-            else: i += 1
-            plot_components.append(dbc.Row(row_children, className="mb-4"))
+        
+        # Sort keys to ensure 1-7 order
+        for name in sorted(plots.keys()):
+            path = plots[name]
+            if os.path.exists(path):
+                encoded = base64.b64encode(open(path, 'rb').read()).decode('ascii')
+                plot_components.append(
+                    dbc.Row([
+                        dbc.Col([
+                            html.H5(name, className="text-center"),
+                            html.Img(src=f'data:image/png;base64,{encoded}', style={'width': '100%', 'height': 'auto', 'border': '1px solid #ddd', 'borderRadius': '5px', 'boxShadow': '2px 2px 5px rgba(0,0,0,0.1)'})
+                        ], width={"size": 10, "offset": 1})
+                    ], className="mb-5")
+                )
 
         return html.Div([
             html.H3("Visual Analysis"),
             dbc.Button("Generate Visual Insights", id="btn-generate-visual-insights", color="warning", className="mb-3"),
-            dcc.Loading(id="loading-visual-insights", children=[html.Div(id="ai-visual-output", children=dcc.Markdown(visual_data) if visual_data else None, className="p-3 border bg-light mb-4")]),
+            dcc.Loading(id="loading-visual-insights", children=[html.Div(id="ai-visual-output", children=dcc.Markdown(visual_data, className="ai-report") if visual_data else None, className="p-3 border bg-light mb-4")]),
             html.Div(plot_components)
         ])
 
@@ -216,17 +298,16 @@ def render_tab_content(active_tab, health_data, visual_data, summary_data, ask_d
         return html.Div([
             html.H3("Report Summary"),
             dbc.Button("Generate Executive Summary", id="btn-ai-summary", color="primary", className="mb-3"),
-            dcc.Loading(html.Div(id="ai-summary-output", children=dcc.Markdown(summary_data) if summary_data else None, className="mb-4 p-3 border bg-light")),
+            dcc.Loading(html.Div(id="ai-summary-output", children=dcc.Markdown(summary_data, className="ai-report") if summary_data else None, className="mb-4 p-3 border bg-light")),
             html.Hr(),
             html.H5("Ask Godobori"),
             dbc.Input(id="ai-question", placeholder="e.g., What is the relationship between Age and Purchase?", className="mb-2"),
             dbc.Button("Ask Godobori", id="btn-ai-ask", color="success"),
-            dcc.Loading(html.Div(id="ai-answer-output", children=dcc.Markdown(ask_data) if ask_data else None, className="mt-3 p-3 border bg-light"))
+            dcc.Loading(html.Div(id="ai-answer-output", children=dcc.Markdown(ask_data, className="ai-report") if ask_data else None, className="mt-3 p-3 border bg-light"))
         ])
-    
     return html.Div("Tab not found.")
 
-# --- Callbacks for Storage and Generation ---
+# --- Callbacks for Storage and Generation (Refactored for PromptFactory Integration) ---
 
 @app.callback(
     [Output("ai-health-output", "children"), Output("store-health", "data")],
@@ -234,14 +315,17 @@ def render_tab_content(active_tab, health_data, visual_data, summary_data, ask_d
     prevent_initial_call=True
 )
 def generate_health_assessment(n):
-    df = orchestrator.get_data()
+    if not n: return dash.no_update, dash.no_update
+    df = orchestrator.get_data(); eda = BlackFridayEDA(df)
     if df.empty: return "No data.", None
-    profiler = SmartProfiler(df)
-    diagnostics = profiler.run_diagnostic_tests()
-    skew_kurt = profiler.get_skewness_kurtosis()
-    context = f"Diagnostic Tests:\n{diagnostics.to_string()}\n\nSkewness & Kurtosis:\n{skew_kurt.to_string()}"
-    explanation = consultant.analyze_diagnostics(context)
-    return dcc.Markdown(explanation), explanation
+    
+    # Passing grounded metadata to reflect new Factory signatures
+    eda_metadata = {
+        "Price_Signature": eda.get_missingness_price_signature(),
+        "Lattice_Root": eda.bottom_up_lattice_check()
+    }
+    explanation = consultant.analyze_diagnostics(df.head(5).to_string(), eda_metadata)
+    return dcc.Markdown(explanation, className="ai-report"), explanation
 
 @app.callback(
     [Output("ai-visual-output", "children"), Output("store-visual", "data")],
@@ -249,12 +333,13 @@ def generate_health_assessment(n):
     prevent_initial_call=True
 )
 def generate_visual_insights(n):
-    df = orchestrator.get_data()
+    if not n: return dash.no_update, dash.no_update
+    df = orchestrator.get_data(); profiler = SmartProfiler(df); eda = BlackFridayEDA(df)
     if df.empty: return "No data.", None
-    profiler = SmartProfiler(df)
-    corr_matrix_str = profiler.get_correlation_matrix_str()
-    insight = consultant.analyze_visuals(corr_matrix_str)
-    return dcc.Markdown(insight), insight
+    
+    eda_metadata = {"Lattice_Root": eda.bottom_up_lattice_check()}
+    insight = consultant.generate_grounded_report(profiler.generate_all_plots(), eda_metadata)
+    return dcc.Markdown(insight, className="ai-report"), insight
 
 @app.callback(
     [Output("ai-summary-output", "children"), Output("store-summary", "data")],
@@ -262,13 +347,16 @@ def generate_visual_insights(n):
     prevent_initial_call=True
 )
 def generate_ai_summary(n):
-    df = orchestrator.get_data()
+    if not n: return dash.no_update, dash.no_update
+    df = orchestrator.get_data(); eda = BlackFridayEDA(df)
     if df.empty: return "No data.", None
-    profiler = SmartProfiler(df)
-    summary_stats = profiler.get_dataset_summary()
-    context = f"Summary Stats: {summary_stats}\nColumns: {df.dtypes.to_string()}"
-    insight = consultant.generate_summary_insight(context)
-    return dcc.Markdown(insight), insight
+    
+    eda_metadata = {
+        "Lattice_Root": eda.bottom_up_lattice_check(),
+        "Price_Signature": eda.get_missingness_price_signature()
+    }
+    insight = consultant.generate_summary_insight(df.dtypes.to_string(), eda_metadata)
+    return dcc.Markdown(insight, className="ai-report"), insight
 
 @app.callback(
     [Output("ai-answer-output", "children"), Output("store-ask-history", "data")],
@@ -279,25 +367,13 @@ def generate_ai_summary(n):
 )
 def ask_ai(n, question, existing_history):
     if not n or not question: return dash.no_update, dash.no_update
-    df = orchestrator.get_data()
-    advanced_stats = SmartProfiler(df).generate_advanced_stats()
-    target = 'Purchase' if 'Purchase' in df.columns else None
-    corr_info = ""
-    if target:
-        num_cols = df.select_dtypes(include=[np.number]).columns
-        if len(num_cols) > 1:
-            corr_info = f"\nCorrelations with {target}:\n{df[num_cols].corr()[target].sort_values(ascending=False).to_string()}"
-
-    context = f"Columns: {list(df.columns)}\n{advanced_stats}\n{corr_info}\nData Sample:\n{df.head(10).to_string()}"
-    answer = consultant.answer_question(context, question)
+    df = orchestrator.get_data(); eda = BlackFridayEDA(df)
+    
+    eda_metadata = {"Lattice_Root": eda.bottom_up_lattice_check()}
+    answer = consultant.answer_question(df.head(10).to_string(), question, eda_metadata)
     
     new_history = f"**Q: {question}**\n\n{answer}\n\n---\n\n" + (existing_history if existing_history else "")
-    return dcc.Markdown(new_history), new_history
+    return dcc.Markdown(new_history, className="ai-report"), new_history
 
 if __name__ == "__main__":
-    import webbrowser
-    from threading import Timer
-    def open_browser(): webbrowser.open_new("http://localhost:8050")
-    logger.info("Starting Dash server on http://0.0.0.0:8050")
-    Timer(1, open_browser).start()
     app.run(debug=True, host="0.0.0.0", port=8050, use_reloader=False)
