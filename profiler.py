@@ -9,11 +9,19 @@ from config import settings
 import os
 
 class SmartProfiler:
-    def __init__(self, df: pd.DataFrame, output_dir="plots"):
+    def __init__(self, df: pd.DataFrame):
         self.df = df
-        self.output_dir = output_dir
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        
+        # Check if we are running inside AWS Lambda
+        if os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+            # Lambda: Must use /tmp
+            self.output_dir = "/tmp/plots"
+        else:
+            # Local Mac/PC: Use current directory
+            self.output_dir = "plots"
+            
+        # Create the directory safely
+        os.makedirs(self.output_dir, exist_ok=True)
         
         # Automatic sampling for large datasets for expensive operations
         if len(df) > settings.LARGE_DATASET_THRESHOLD:

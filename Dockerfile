@@ -39,13 +39,14 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Copy application files and models
 COPY *.py .
 COPY models/ ./models/
+COPY data/ ./data/
 
 # Set environment variables for Lambda Adapter
 ENV PORT=8080 
 
 # Create logs directory and set permissions
 RUN mkdir logs && chmod 777 logs
-RUN chmod +r serve.py models/best_model.pkl models/preprocessor.b
+RUN chmod +r serve.py models/best_model.pkl models/preprocessor.b data/train.csv data/test_Vges7qu.csv
 
 # Expose ports
 EXPOSE 8080
