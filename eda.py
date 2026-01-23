@@ -375,5 +375,7 @@ def ask_ai(n, question, existing_history):
     new_history = f"**Q: {question}**\n\n{answer}\n\n---\n\n" + (existing_history if existing_history else "")
     return dcc.Markdown(new_history, className="ai-report"), new_history
 
+# WORKS IN LAMBDA
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8050, use_reloader=False)
+    # Debug must be False for production/Lambda
+    app.run(debug=False, host="0.0.0.0", port=8050)
