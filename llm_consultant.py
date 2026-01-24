@@ -9,7 +9,7 @@ from logger import logger
 class PromptFactory:
     """
     Dynamic System Instruction Factory.
-    Anchors Gemini 1.5 Flash in mathematical 'Ground Truths' from the Lattice discovery.
+    Anchors Gemini 2.5 Flash in mathematical 'Ground Truths' from the Lattice discovery.
     """
     @staticmethod
     def create_grounded_instruction(eda_metadata):

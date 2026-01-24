@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     ENABLE_LLM: bool = True
     OPENAI_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
-    LLM_MODEL: str = "gemini-1.5-flash"
+    LLM_MODEL: str = "gemini-2.5-flash"
     LLM_TEMPERATURE: float = 0.1
 
     # Cloud Settings (Optional)
