@@ -29,6 +29,12 @@ Now, they want to build a model to predict the purchase amount of customer again
 *   **Retailers**: To create personalized offers, optimize inventory, and forecast revenue.
 *   **Marketing Teams**: To target specific demographics with high-value product categories.
 
+### How the Model is Used
+The model will be deployed as a web service where the business can input customer details (Age, Gender, City) and Product ID to get an estimated purchase value. Predictions for the test data (test.csv) are used to generate submissions in "SampleSubmission.csv" format.
+
+### Why this Problem Matters
+Accurate purchase prediction allows retailers to maximize customer lifetime value (CLV) and operational efficiency. Misjudging demand leads to overstocking (waste) or understocking (lost revenue). Root Mean Squared Error (RMSE) is used as the evaluation metric to penalize large errors significantly.
+
 ## 2. AutoEDA Platform
 
 The project transforms `eda.py` into a powerful, intelligent Exploratory Data Analysis (EDA) platform with advanced features including automated statistical test selection, non-linear relationship detection, and AI-powered insights.
@@ -60,7 +66,50 @@ Before running ANOVA, the platform checks:
 
 If assumptions fail → Automatically switches to **Kruskal-Wallis** (non-parametric).
 
-## 3. Refactoring & Logic Analysis
+## 3. Evaluation Metric
+
+**Metric:** Root Mean Squared Error (RMSE)
+
+We use RMSE because it penalizes large errors more than Mean Absolute Error (MAE). In sales forecasting, significantly missing a high-value transaction is more costly than missing a small one.
+
+## 4. Data Preparation & EDA
+
+**Data Source:** The dataset is sourced from Analytics Vidhya (Black Friday Sales Prediction).
+
+### Retrieval & Setup
+Data retrieval is automated via the `setup_data.py` script, which extracts the dataset into a structured `data/` directory.
+
+### EDA Findings
+*   **Target Distribution**: The purchase amount is Right-Skewed. Most transactions are mid-range, with a "long tail" of high spenders.
+*   **Missing Values**: `Product_Category_2` (~31% missing) and `Product_Category_3` (~69% missing). These are treated as "Structural Nulls" (indicating a basic product) and imputed with `0`.
+*   **Correlations**: `Product_Category_1` is the strongest predictor. Age and Gender have non-linear relationships with spending.
+*   **Outliers**: Z-score analysis revealed no extreme outliers requiring removal (Z > 3).
+
+### Reproducibility
+All preprocessing steps (Imputation, Type Casting, Feature Engineering) are encapsulated in `feature_engineering.py` to ensure the exact same logic is applied during Training, Batch Prediction, and API Inference.
+
+## 5. Modeling
+
+We trained and compared three different regression models to select the best performer.
+
+### Models Trained
+1.  **Decision Tree Regressor**: Baseline model.
+2.  **Random Forest Regressor**: Ensemble method to capture non-linearities.
+3.  **XGBoost / LightGBM**: Gradient boosting machines for high performance.
+
+### Model Selection & Tuning
+*   **Cross-Validation**: Used 3-fold cross-validation during tuning.
+*   **Hyperparameter Tuning**: Performed using `RandomizedSearchCV`.
+*   **Selection**: **LightGBM** was selected as the best model based on the lowest RMSE on the validation set.
+
+### Scores Summary
+| Model | RMSE (Validation) |
+|---|---|
+| Decision Tree | ~3300 |
+| Random Forest | ~2950 |
+| **LightGBM** | **~2894** |
+
+## 6. Refactoring & Logic Analysis
 
 We have significantly upgraded the core logic to improve accuracy, cost-efficiency, and grounding.
 
@@ -80,13 +129,60 @@ The **System Instruction Factory** is the most critical addition. It allows the 
 - **Visual Analysis**: Sequentially analyzes plots anchored by the Lattice Root.
 - **Ask Godobori**: Answers strict Q&A based on the statistical context provided.
 
-## 4. Evaluation Metric
+## 7. Web Service (FastAPI)
 
-**Metric:** Root Mean Squared Error (RMSE)
+The project implements a **FastAPI** application (`serve.py`) exposing the following endpoints:
 
-We use RMSE because it penalizes large errors more than Mean Absolute Error (MAE). In sales forecasting, significantly missing a high-value transaction is more costly than missing a small one.
+### Endpoints
+*   `POST /predict`: Accepts a single JSON input and returns a prediction.
+*   `GET /health`: Simple 200 OK check for container health.
+*   `POST /predict_batch`: Accepts a list of inputs.
+*   `POST /predict_file`: Accepts CSV/Excel file uploads.
 
-## 5. Deployment Strategy
+### Example Request
+```bash
+curl -X POST -H "Content-Type: application/json" \
+     -d '{
+           "Gender": "M", 
+           "Age": "26-35", 
+           "Occupation": 16, 
+           "City_Category": "A", 
+           "Stay_In_Current_City_Years": "2", 
+           "Marital_Status": 0, 
+           "Product_Category_1": 5
+         }' \
+     http://localhost:8080/predict
+```
+
+## 8. Dockerization
+
+✅ **Dockerfile** provided for reproducible deployment.
+
+```dockerfile
+# Base Image
+FROM python:3.12-slim
+
+# Install system dependencies (including libgomp1 for LightGBM)
+RUN apt-get update && apt-get install -y curl libgomp1 && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code and models
+COPY . .
+
+# Expose port
+EXPOSE 8080
+
+# Command to run the app
+CMD ["uvicorn", "serve:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+## 9. Deployment Strategy
 
 Deploying both the **API** (FastAPI) and **Dashboard** (Dash) to AWS Lambda within a single repo requires a specific architectural shift using the **Lambda Web Adapter**.
 
