@@ -39,19 +39,19 @@ Accurate purchase prediction allows retailers to maximize customer lifetime valu
 
 The project transforms `eda.py` into a powerful, intelligent Exploratory Data Analysis (EDA) platform with advanced features including automated statistical test selection, non-linear relationship detection, and AI-powered insights.
 
-### 🤖 AI Consultant (LLM-Powered)
+### AI Consultant (LLM-Powered)
 - **Natural Language Insights**: Explains statistical findings in plain English using **Gemini 2.5 Flash**.
 - **Business Context**: Connects statistics to actionable business decisions.
 - **Interactive Q&A**: Ask "Godobori" questions about your data.
 - **Transformation Strategy**: AI-generated feature engineering plans grounded in mathematical discovery.
 
-### 🎨 Interactive Dash UI
+### Interactive Dash UI
 - **Real-Time Analysis**: No massive HTML files - renders on-demand.
 - **Multi-Tab Interface**: Overview, Visual Analysis, AI Insights.
 - **Smart Sampling**: Automatic sampling for large datasets (>1M rows) to ensure responsiveness.
 - **Beautiful Visualizations**: Plotly-powered interactive charts (Sequential 1-7 analysis).
 
-### 📊 Relationships & Statistical Testing
+### Relationships & Statistical Testing
 - **Bivariate Analysis**: Automatic analysis between any two variables.
 - **Automatic Test Selection**:
   - **Categorical × Categorical**: Chi-squared test.
